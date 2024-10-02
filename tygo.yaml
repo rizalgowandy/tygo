@@ -11,9 +11,33 @@ packages:
     indent: "  "
     exclude_files:
       - "excluded.go"
-    frontmatter: | # We can define some additional text to put at the start of the file.
+    frontmatter:
+      | # We can define some additional text to put at the start of the file.
       export type Something = string | number;
   - path: "github.com/gzuidhof/tygo/examples/simple"
+    fallback_type: unknown
+  - path: "github.com/gzuidhof/tygo/examples/inheritance"
+    fallback_type: unknown
+    frontmatter:
+      | # We can define some additional text to put at the start of the file.
+      import * as bookapp from "../bookstore"
+  - path: "github.com/gzuidhof/tygo/examples/embed"
+    fallback_type: unknown
+    type_mappings:
+      bookapp.Book: "bookapp.Book"
+      bookapp.Chapter: "bookapp.Chapter"
+    frontmatter:
+      | # We can define some additional text to put at the start of the file.
+      import * as bookapp from "../bookstore"
+  - path: "github.com/gzuidhof/tygo/examples/generic"
+    fallback_type: unknown
+  - path: "github.com/gzuidhof/tygo/examples/generic_any"
+  - path: "github.com/gzuidhof/tygo/examples/preserveTypeComments"
+    fallback_type: unknown
+    preserve_comments: "types"
+  - path: "github.com/gzuidhof/tygo/examples/noComments"
+    fallback_type: unknown
+    preserve_comments: "none"
   # Generate the "net/http" output example, note the output is in gitignore as it's pretty big
   - path: "net/http"
     output_path: "./examples/http/index.ts"
@@ -22,3 +46,14 @@ packages:
   # Generate the "time" output example, note the output is in gitignore as it's pretty big
   - path: "time"
     output_path: "./examples/time/index.ts"
+  - path: "github.com/gzuidhof/tygo/examples/yaml"
+    output_path: "./examples/yaml/index.ts"
+    flavor: "yaml"
+  - path: "github.com/gzuidhof/tygo/examples/interface"
+  - path: "github.com/gzuidhof/tygo/examples/directive"
+  - path: "github.com/gzuidhof/tygo/examples/emit"
+    exclude_files: 
+      - "excluded.go"
+  - path: "github.com/gzuidhof/tygo/examples/rune"
+
+

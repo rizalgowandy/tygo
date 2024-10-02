@@ -11,14 +11,15 @@ import (
 )
 
 func Execute() {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "tygo",
 		Short: "Tool for generating Typescript from Go types",
 		Long:  `Tygo generates Typescript interfaces and constants from Go files by parsing them.`,
 	}
 
-	rootCmd.PersistentFlags().String("config", "tygo.yaml", "config file to load (default is tygo.yaml in the current folder)")
-	rootCmd.Version = Version() + " " + Target() + " (" + CommitDate() + ") " + Commit()
+	rootCmd.PersistentFlags().
+		String("config", "tygo.yaml", "config file to load (default is tygo.yaml in the current folder)")
+	rootCmd.Version = FullVersion()
 	rootCmd.PersistentFlags().BoolP("debug", "D", false, "Debug mode (prints debug messages)")
 
 	rootCmd.AddCommand(&cobra.Command{

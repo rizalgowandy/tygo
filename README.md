@@ -2,15 +2,14 @@
 
 Tygo is a tool for generating Typescript typings from Golang source files that just works.
 
-Other than reflection-based methods it preserves comments, understands constants and also supports non-struct `type` expressions. It's perfect for generating equivalent types for a Golang REST API to be used in your front-end codebase.
+It preserves comments, understands constants and also supports non-struct `type` expressions. It's perfect for generating equivalent types for a Golang REST API to be used in your front-end codebase.
+
+**🚀 Supports Golang 1.18 generic types and struct inheritance**
 
 ## Installation
 
 ```shell
-# Go >= 1.17
 go install github.com/gzuidhof/tygo@latest
-# Go < 1.17:
-go install github.com/gzuidhof/tygo
 ```
 
 ## Example
@@ -60,7 +59,9 @@ _Typescript output_
  * Comments are kept :)
  */
 export type ComplexType = {
-  [key: string]: { [key: number /* uint16 */]: number /* uint32 */ | undefined };
+  [key: string]: {
+    [key: number /* uint16 */]: number /* uint32 */ | undefined;
+  };
 };
 export type UserRole = string;
 export const UserRoleDefault: UserRole = "viewer";
@@ -161,6 +162,10 @@ packages:
     # in the output.
     exclude_files:
       - "private_stuff.go"
+
+    # Package that the generates Typescript types should extend. This is useful when
+    # attaching your types to a generic ORM.
+    extends: "SomeType"
 ```
 
 See also the source file [tygo/config.go](./tygo/config.go).
@@ -193,6 +198,60 @@ export interface Book {
 
 You could use the `frontmatter` field in the config to inject `export type Genre = "novel" | "crime" | "fantasy"` at the top of the file, and use `tstype:"Genre"`. I personally prefer that as we may use the `Genre` type more than once.
 
+**`tygo:emit` directive**
+
+Another way to generate types that cannot be directly represented in Go is to use a `//tygo:emit` directive to 
+directly emit literal TS code.
+The directive can be used in two ways. A `tygo:emit` directive on a struct will emit the remainder of the directive 
+text before the struct.
+```golang
+// Golang input
+
+//tygo:emit export type Genre = "novel" | "crime" | "fantasy"
+type Book struct {
+	Title    string    `json:"title"`
+	Genre    string    `json:"genre" tstype:"Genre"`
+}
+```
+
+```typescript
+export type Genre = "novel" | "crime" | "fantasy"
+
+export interface Book {
+  title: string;
+  genre: Genre;
+}
+```
+
+A `//tygo:emit` directive on a string var will emit the contents of the var, useful for multi-line content.
+```golang
+//tygo:emit
+var _ = `export type StructAsTuple=[
+  a:number, 
+  b:number, 
+  c:string,
+]
+`
+type CustomMarshalled struct {
+  Content []StructAsTuple `json:"content"`
+}
+```
+
+```typescript
+export type StructAsTuple=[
+  a:number, 
+  b:number, 
+  c:string,
+]
+
+export interface CustomMarshalled {
+  content: StructAsTuple[];
+}
+
+```
+
+Generating types this way is particularly useful for tuple types, because a comma cannot be used in the `tstype` tag.
+
 ### Required fields
 
 Pointer type fields usually become optional in the Typescript output, but sometimes you may want to require it regardless.
@@ -217,10 +276,156 @@ export interface Nicknames {
 }
 ```
 
+### Readonly fields
+
+Sometimes a field should be immutable, you can add `,readonly` to the `tstype` tag to mark a field as `readonly`.
+
+```golang
+// Golang input
+type Cat struct {
+	Name    string `json:"name,readonly"`
+	Owner   string `json:"owner"`
+}
+```
+
+```typescript
+// Typescript output
+export interface Cat {
+  readonly name: string;
+  owner: string;
+}
+```
+
+## Inheritance
+
+Tygo supports interface inheritance. To extend an `inlined` struct, use the tag `tstype:",extends"` on struct fields you wish to extend. Only `struct` types can be extended.
+
+Struct pointers are optionally extended using `Partial<MyType>`. To mark these structs as required, use the tag `tstype:",extends,required"`.
+
+Named `struct fields` can also be extended.
+
+Example usage [here](examples/inheritance)
+
+```go
+// Golang input
+import "example.com/external"
+
+type Base struct {
+	Name string `json:"name"`
+}
+
+type Base2[T string | int] struct {
+	ID T `json:"id"`
+}
+
+type OptionalPtr struct {
+	Field string `json:"field"`
+}
+
+type Other[T int] struct {
+	*Base                  `       tstype:",extends,required"`
+	Base2[T]               `       tstype:",extends"`
+	*OptionalPtr           `       tstype:",extends"`
+	external.AnotherStruct `       tstype:",extends"`
+	OtherValue             string `                  json:"other_value"`
+}
+```
+
+```typescript
+// Typescript output
+export interface Base {
+  name: string;
+}
+
+export interface Base2<T extends string | number /* int */> {
+  id: T;
+}
+
+export interface OptionalPtr {
+  field: string;
+}
+
+export interface Other<T extends number /* int */>
+  extends Base,
+    Base2<T>,
+    Partial<OptionalPtr>,
+    external.AnotherStruct {
+  other_value: string;
+}
+```
+
+## Generics
+
+Tygo supports generic types (Go version >= 1.18) out of the box.
+
+```go
+// Golang input
+type UnionType interface {
+	uint64 | string
+}
+
+type ABCD[A, B string, C UnionType, D int64 | bool] struct {
+	A A `json:"a"`
+	B B `json:"b"`
+	C C `json:"c"`
+	D D `json:"d"`
+}
+```
+
+```typescript
+// Typescript output
+export type UnionType = number /* uint64 */ | string;
+
+export interface ABCD<
+  A extends string,
+  B extends string,
+  C extends UnionType,
+  D extends number /* int64 */ | boolean
+> {
+  a: A;
+  b: B;
+  c: C;
+  d: D;
+}
+```
+
+## YAML support
+
+Tygo supports generating typings for YAML-serializable objects that can be understood by Go apps.
+
+By default, Tygo will respect `yaml` Go struct tags, in addition to `json`, but it will not apply any transformations to untagged fields.
+However, the default behavior of the popular `gopkg.in/yaml.v2` package for Go structs without tags is to downcase the struct field names.
+To emulate this behavior, one can use the `flavor` configuration option:
+
+```yaml
+packages:
+  - path: "github.com/my/package"
+    output_path: "webapp/api/types.ts"
+    flavor: "yaml"
+```
+
+```go
+// Golang input
+type Foo struct {
+	TaggedField string `yaml:"custom_field_name_in_yaml"`
+    UntaggedField string
+}
+```
+
+```typescript
+// Typescript output
+export interface Foo {
+  custom_field_name_in_yaml: string;
+  untaggedfield: string;
+}
+```
+
 ## Related projects
 
-- [**typescriptify-golang-structs**](https://github.com/tkrajina/typescriptify-golang-structs): Probably the most popular choice. The issue with this package is that it relies on reflection rather than parsing, which means that certain things can't be kept such comments. The CLI generates Go file which is then executed and reflected on, and its library requires you to manually specify all types that should be converted.
-- [**go2ts**](https://github.com/StirlingMarketingGroup/go2ts): A transpiler with a web interface, this project was based off this project. It's perfect for quick one-off transpilations. There is no CLI, no support for `const` and there are no ways to customize the output.
+- [**typescriptify-golang-structs**](https://github.com/tkrajina/typescriptify-golang-structs): Probably the most popular choice. The downside of this package is that it relies on reflection rather than parsing, which means that certain things can't be kept such as comments without adding a bunch of tags to your structs. The CLI generates a Go file which is then executed and reflected on. The library requires you to manually specify all types that should be converted.
+- [**go2ts**](https://github.com/StirlingMarketingGroup/go2ts): A transpiler with a web interface, this project can be seen as an evolution of this project. It's perfect for quick one-off transpilations. There is no CLI, no support for `const` and there are no ways to customize the output.
+
+**If `tygo` is useful for your project, consider leaving a star.**
 
 ## License
 
